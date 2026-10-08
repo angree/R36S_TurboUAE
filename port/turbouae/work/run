@@ -1,0 +1,16 @@
+; Work: is ports/turbouae/work on the SD card - put files here from the PC.
+; The Workbench hardfile runs this script at boot (Execute Work:run).
+;
+; xSysInfo (Work:xSysInfo, 2026) needs identify.library, which lives in Work:Libs.
+Assign LIBS: Work:Libs ADD
+; Xtreme Racing (second hardfile, volume XtremeRacing:) keeps Takeover.library on its disk
+Assign >NIL: LIBS: XtremeRacing: ADD
+;
+; First boot with the RTG board: put the Workbench screen on it (640x480, 256 colours),
+; once - afterwards ScreenMode prefs is yours. rtgmode does nothing if RTG is off.
+If NOT EXISTS Work:rtgmode.done
+  Work:rtgmode 640 480 8
+  If NOT WARN
+    Echo >Work:rtgmode.done "screen mode set"
+  EndIf
+EndIf

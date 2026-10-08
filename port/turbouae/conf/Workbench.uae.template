@@ -1,0 +1,47 @@
+config_description=Workbench 3.1 - A1200 AGA, 68020 + JIT, 2 MB chip + 64 MB Z3 fast
+config_hardware=true
+config_host=true
+; --- machine ---
+cpu_type=68020
+cpu_model=68020
+fpu_model=0
+cpu_compatible=false
+cpu_24bit_addressing=false
+cpu_speed=max
+cachesize=8192
+; CPU Idle half way (GUI slider 5 of 10 = 105): the JIT CPU gives time back to the
+; chipset and sound when the Amiga waits - sound broke up in Xtreme Racing without it
+cpu_idle=105
+chipset=aga
+chipset_compatible=A4000
+chipmem_size=4
+fastmem_size=0
+; no "slow" ($C00000) memory: Amiberry adds 512 KB of it when the config does not say
+bogomem_size=0
+; Z3 rather than Zorro II fast RAM: with JIT, v3.3 hangs on Zorro II fast RAM (measured)
+z3mem_size=64
+kickstart_rom_file=@DIR@/kickstarts/kick31.rom
+; --- disks: the Workbench hardfile, and Work: = ports/turbouae/work on the card ---
+hardfile2=rw,DH0:@DIR@/hdf/workbench.hdf,32,1,2,512,0,,uae
+filesystem2=rw,WORK:Work:@DIR@/work,-128
+; --- RTG: a 16 MB uaegfx (Picasso96) board. The Workbench hardfile has Picasso96; Work:run
+;     switches the Workbench screen to it (640x480, 256 colours) on the first boot. ---
+gfxcard_size=16
+; --- display: 640x512 (PAL hires, doubled lines) scaled to the 640x480 panel ---
+gfx_width=640
+gfx_height=512
+gfx_resolution=hires
+gfx_linemode=double
+gfx_center_horizontal=smart
+gfx_center_vertical=smart
+amiberry.gfx_correct_aspect=1
+; --- input: port 0 mouse (the pad's stick drives it), port 1 the pad as joystick ---
+joyport0=mouse
+joyport1=joy0
+; --- sound ---
+sound_output=normal
+sound_channels=stereo
+sound_frequency=44100
+sound_interpol=none
+show_leds=true
+use_gui=yes

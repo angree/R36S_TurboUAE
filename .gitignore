@@ -1,0 +1,19 @@
+# test infrastructure with a secret token, device logs and screenshots - never published
+baseline/agent/
+baseline/card/
+baseline/device-logs/
+baseline/tools/x_*
+baseline/tools/x.info
+# icons extracted from AmigaOS (Cloanto copyright)
+port/icons/
+# build products
+baseline/bench/dhrybench
+baseline/bench/sysclick
+baseline/bench/rtgmode
+baseline/bench/dhry_1_amiga.c
+port/turbouae/work/rtgmode
+port/turbouae/work/xSysInfo
+port/turbouae/work/xSysInfo.info
+port/turbouae/work/Libs/
+release/*.lha
+*.pyc

@@ -98,10 +98,10 @@ It is a modified version of Amiberry; modifications by Grzegorz Korycki, 2026-10
         - the console's system libraries, used under their own licences
 
 Included Amiga software (in ports/turbouae/work):
-    xSysInfo 0.12.0 - xsysinfo contributors, BSD 2-clause (work/xSysInfo.LICENSE),
-        https://github.com/reinauer/xSysInfo
-    identify.library - Richard Koerber, LGPL v3 (work/Libs/identify.library.LICENSE)
     rtgmode - part of TurboUAE (source in source/amiga-tools), GPL v3
+Recommended, not included (third-party): xSysInfo (https://github.com/reinauer/xSysInfo) - put
+xSysInfo in ports/turbouae/work and identify.library in ports/turbouae/work/Libs; Work:run
+already assigns that folder to LIBS:.
 
 NOT included and NOT covered by these licences: Kickstart ROMs, AmigaOS / Workbench, games.
 

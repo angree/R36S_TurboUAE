@@ -13,7 +13,7 @@
 //      mouse <dx> <dy>       move the Amiga mouse / GUI pointer by a delta
 //      click [left|right]    mouse click at the current position
 //      stick <x> <y>         pretend the left stick is held at x,y (-32768..32767), "stick 0 0" ends it
-//      button <a|b|x|y|select|start> <0|1>   pretend a pad button is held / released
+//      button <a|b|x|y|select|start|up|down|left|right|l1|r1|l2|r2|l3|r3> <0|1>   pretend a pad button is held / released
 //      wait <frames>         do nothing for that many frames
 //      gui                   open the settings GUI
 //      quit                  leave Amiberry
@@ -35,7 +35,23 @@
 #include "newcpu.h"
 #include "custom.h"
 #include "gui.h"
+#include "rommgr.h"
 #include "r36s_font35.h"
+
+#define TURBOUAE_VERSION "0.2.0"
+#ifdef TURBO_LIBRETRO
+// libretro core (native/libretro): the pad comes from the frontend, the buttons that open the
+// settings and the keyboard are core options, quitting is the frontend's business
+extern int lr_pad_mode, lr_mouse_speed, lr_btn_gui, lr_btn_vkbd;
+void lr_emu_frame(int in_gui);
+const char* lr_config_save_path();
+unsigned lr_raw_buttons(int pad);
+Sint16 lr_raw_axis(int pad, int axis);
+void lr_emu_view(unsigned hide_buttons, int hide_stick);
+void lr_fake_button(int button, int down);
+extern int lr_key_map[16], lr_dpad_keys, lr_lstick_keys, lr_rstick_keys;
+void lr_key_event(int scancode, int down);
+#endif
 
 extern SDL_Renderer* renderer;
 extern SDL_Window* sdl_window;
@@ -49,9 +65,17 @@ extern struct uae_prefs changed_prefs;
 static void save_settings()
 {
 	char path[1024];
+#ifdef TURBO_LIBRETRO
+	// only a .uae the session was started from is written back; machines built from core
+	// options and a disk image have no file of their own
+	if (!lr_config_save_path())
+		return;
+	snprintf(path, sizeof path, "%s", lr_config_save_path());
+#else
 	const char* name = last_loaded_config[0] ? last_loaded_config : "Workbench";
 	const char* dot = strrchr(name, '.');
 	snprintf(path, sizeof path, "conf/%.*s.uae", dot ? (int)(dot - name) : (int)strlen(name), name);
+#endif
 	const int ok = cfgfile_save(&changed_prefs, path, 0);
 	write_log("r36s: settings saved to %s (%s)\n", path, ok ? "ok" : "FAILED");
 }
@@ -192,7 +216,7 @@ void r36s_gui_overlay()
 	SDL_RenderSetScale(renderer, 1.0f, 1.0f);
 	SDL_RenderSetViewport(renderer, nullptr);
 	const int sc = 2;
-	const char* left = "TurboUAE 0.1.0";
+	const char* left = "TurboUAE " TURBOUAE_VERSION;
 	const char* right = "port by Grzegorz Korycki";
 	text35_shadow(2, 2, sc, left);
 	text35_shadow(w - 2 - (int)strlen(right) * 4 * sc, 2, sc, right);
@@ -275,6 +299,12 @@ static int button_index(const char* n)
 	if (!strcmp(n, "down")) return PAD_DOWN;
 	if (!strcmp(n, "left")) return PAD_LEFT;
 	if (!strcmp(n, "right")) return PAD_RIGHT;
+	if (!strcmp(n, "l1")) return 4;
+	if (!strcmp(n, "r1")) return 5;
+	if (!strcmp(n, "l2")) return 6;
+	if (!strcmp(n, "r2")) return 7;
+	if (!strcmp(n, "l3")) return 14;
+	if (!strcmp(n, "r3")) return 15;
 	return -1;
 }
 
@@ -312,6 +342,9 @@ static void run_command(const char* line, bool in_gui)
 	else if (sscanf(line, "button %63s %d", b, &x) == 2) {
 		const int i = button_index(b);
 		if (i >= 0) fake_btn[i] = x;
+#ifdef TURBO_LIBRETRO
+		lr_fake_button(i, x);
+#endif
 	}
 	else if (sscanf(line, "fpslog %d", &x) == 1)
 		fpslog_left = x;
@@ -346,7 +379,11 @@ static void read_control_file()
 static int pad_button(int i)
 {
 	if (fake_btn[i]) return 1;
+#ifdef TURBO_LIBRETRO
+	return (lr_raw_buttons(0) >> i) & 1;
+#else
 	return pad ? SDL_JoystickGetButton(pad, i) : 0;
+#endif
 }
 
 
@@ -391,6 +428,9 @@ static void protect_memory_holes()
 {
 	if (!currprefs.cachesize || !regs.natmem_offset)
 		return;
+	static const bool off = getenv("TURBOUAE_NOHOLES") != nullptr;     // experiments
+	if (off)
+		return;
 	int changed = 0, holes = 0;
 	for (int p = 0; p < 256; p++) {
 		const uae_u32 addr = (uae_u32)p << 16;
@@ -418,6 +458,67 @@ void r36s_memory_map_changed()
 	protect_memory_holes();
 }
 
+// The Kickstart a machine with the JIT can boot from. Measured on the Workbench machine with the
+// JIT (2026-10-14): Kickstart 3.1 for the A4000 (40.068) boots; 3.1 for the A1200, A3000 and
+// A500/A600 and 3.0 for the A1200 hang at boot. First by contents - any file name, in the folders
+// Amiberry's ROM scan covers - then by the names people give it, in the folders given (the
+// user's own kick31.rom may be a dump no ROM list knows). Sets p->romfile; false if none found.
+bool r36s_jit_kickstart(struct uae_prefs* p, const char* const* dirs, int ndirs)
+{
+	static const int a4000_31[] = { 16, 13, 31, -1 };     // 40.068, 40.070, 40.068 (Cloanto)
+	if (configure_rom(p, a4000_31, 0))
+		return true;
+	static const char* const names[] = {
+		"kick31.rom", "kick40068.A4000", "amiga-os-310-a4000.rom",
+		"Kickstart v3.1 rev 40.68 (1993)(Commodore)(A4000).rom",
+		"Kickstart v3.1 rev 40.068 (1993)(Commodore)(A4000).rom", "kick31_020.rom" };
+	for (int d = 0; d < ndirs; d++)
+		for (const char* n : names) {
+			char path[MAX_DPATH];
+			snprintf(path, sizeof path, "%s/%s", dirs[d], n);
+			if (access(path, R_OK) == 0) {
+				snprintf(p->romfile, sizeof p->romfile, "%s", path);
+				return true;
+			}
+		}
+	return false;
+}
+
+// called at the end of whdload_auto_prefs() (patch whd_jit.py, Ports version only; the libretro
+// core does the same in lr_configure() and leaves the JIT to its core option).
+// The booter builds an A1200 without the JIT. With the JIT that machine never comes up: A1200
+// chipset mode, Zorro II RAM and the original A1200 Kickstart 3.1 (40.068) each hang it at boot
+// (measured one at a time on the Workbench machine, 2026-10-14). So WHDLoad games get the
+// Workbench machine's setup: JIT, A4000 chipset mode, 64 MB Zorro III instead of Zorro II, and
+// the A4000 Kickstart 3.1 to boot from (WHDLoad loads its own Kickstart for the game anyway).
+// Without that Kickstart the booter's machine stays as it is, without the JIT. 68000 games (the
+// booter's A600) are left alone.
+#ifndef TURBO_LIBRETRO
+std::string prefix_with_application_directory_path(std::string currentpath);
+void r36s_whdload_machine(struct uae_prefs* p)
+{
+	if (p->cpu_model < 68020)
+		return;
+	const std::string kd = prefix_with_application_directory_path("kickstarts");
+	const char* dirs[] = { kd.c_str() };
+	if (!r36s_jit_kickstart(p, dirs, 1)) {
+		write_log("r36s: no Kickstart 3.1 (A4000) found - WHDLoad game without the JIT\n");
+		return;
+	}
+	p->cachesize = 8192;
+	p->cpu_compatible = false;
+	p->cpu_cycle_exact = p->cpu_memory_cycle_exact = p->blitter_cycle_exact = false;
+	p->address_space_24 = false;
+	p->fastmem[0].size = 0;
+	p->z3fastmem[0].size = 64 << 20;
+	const unsigned mask = p->chipset_mask;
+	p->cs_compatible = CP_A4000;
+	built_in_chipset_prefs(p);
+	p->chipset_mask = mask;
+	write_log("r36s: WHDLoad machine with the JIT, boots from %s\n", p->romfile);
+}
+#endif
+
 // called at the start of memory_clear() (patched): it clears each bank's whole allocation,
 // which can be larger than what is mapped (slow memory: 2 MB allocated, 1.5 MB visible), so
 // everything is made accessible first; map_banks()/the next check protect the holes again.
@@ -428,6 +529,42 @@ void r36s_memory_unprotect_all()
 	mprotect(regs.natmem_offset, 1 << 24, PROT_READ | PROT_WRITE);
 	holes_known = 0;
 }
+
+#ifdef TURBO_LIBRETRO
+// Pad buttons that press Amiga keys (core options "Key on ..." and "D-pad as cursor keys"):
+// sends key down / up on changes; returns the buttons the emulator's joystick must not see.
+// active = false (settings screen, on-screen keyboard) releases everything.
+static unsigned pad_keys(bool active)
+{
+	// 0-15 pad buttons, 16-19 left stick up/down/left/right, 20-23 the right stick
+	static int sent[24];                      // scancode held down for each, 0 = none
+	static const int cursor[4] = { SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT };
+	unsigned hide = 0;
+	for (int b = 0; b < 24; b++) {
+		int sc, held;
+		if (b < 16) {
+			sc = lr_key_map[b];
+			if (b >= PAD_UP && b <= PAD_RIGHT && lr_dpad_keys) sc = cursor[b - PAD_UP];
+			if (b == lr_btn_gui || b == lr_btn_vkbd) sc = 0;
+			if (sc && !(b >= PAD_UP && b <= PAD_RIGHT && lr_dpad_keys == 2)) hide |= 1u << b;
+			held = pad_button(b);
+		} else {
+			const int stick = (b - 16) / 4, dir = (b - 16) % 4;      // dir: up, down, left, right
+			sc = (stick ? lr_rstick_keys : lr_lstick_keys) ? cursor[dir] : 0;
+			const int v = lr_raw_axis(0, stick * 2 + (dir < 2 ? 1 : 0));
+			// press at half way, release at a quarter: no flicker around the threshold
+			const int thr = sent[b] ? 8000 : 16000;
+			held = (dir == 0 || dir == 2) ? v < -thr : v > thr;
+		}
+		const int want = sc && active && held ? sc : 0;
+		if (want == sent[b]) continue;
+		if (sent[b]) lr_key_event(sent[b], 0);
+		if (want) lr_key_event(want, 1);
+		sent[b] = want;
+	}
+	return hide;
+}
+#endif
 
 void r36s_frame(int in_gui)
 {
@@ -458,6 +595,36 @@ void r36s_frame(int in_gui)
 	if (!pad && SDL_NumJoysticks() > 0)
 		pad = SDL_JoystickOpen(0);
 
+#ifdef TURBO_LIBRETRO
+	lr_emu_frame(in_gui);
+	// one button each for the settings screen (press again to return) and the keyboard
+	const int sel = 0;
+	const int gui_b = lr_btn_gui >= 0 && pad_button(lr_btn_gui), kb_b = lr_btn_vkbd >= 0 && pad_button(lr_btn_vkbd);
+	if (gui_b) {
+		if (!combo_latched) {
+			combo_latched = 1;
+			if (in_gui) gui_running = false; else inputdevice_add_inputcode(AKS_ENTERGUI, 1, nullptr);
+		}
+	}
+	else if (kb_b && !in_gui) {
+		if (!combo_latched) { combo_latched = 1; r36s_vkbd_toggle(); }
+	}
+	else
+		combo_latched = 0;
+	// what the emulator's own joystick code may see of pad 1: not the two buttons above,
+	// nothing while the keyboard is up, and the stick only when it is not the mouse
+	{
+		unsigned hide = 0;
+		if (lr_btn_gui >= 0) hide |= 1u << lr_btn_gui;
+		if (lr_btn_vkbd >= 0) hide |= 1u << lr_btn_vkbd;
+		const bool kb = r36s_vkbd_shown() && !in_gui;
+		hide |= pad_keys(!in_gui && !kb);
+		if (kb) hide = ~0u;
+		lr_emu_view(hide, in_gui || kb || lr_pad_mode == 0 || lr_lstick_keys);
+	}
+	const bool stick_is_mouse = in_gui || (lr_pad_mode == 0 && !lr_lstick_keys);
+#else
+	const bool stick_is_mouse = true;
 	// hotkeys, straight from the pad
 	const int sel = pad_button(PAD_SELECT);
 	if (sel && pad_button(PAD_START)) {
@@ -471,6 +638,7 @@ void r36s_frame(int in_gui)
 	}
 	else
 		combo_latched = 0;
+#endif
 
 	// on-screen keyboard: while it is shown the pad's buttons type, so A/B are not the mouse
 	if (!in_gui) {
@@ -483,24 +651,42 @@ void r36s_frame(int in_gui)
 	}
 
 	// left stick -> mouse, A/B -> mouse buttons (not while Select is held: those are hotkeys)
+#ifdef TURBO_LIBRETRO
+	int ax = fake_on ? fake_x : lr_raw_axis(0, 0);
+	int ay = fake_on ? fake_y : lr_raw_axis(0, 1);
+	const int speed = lr_mouse_speed;
+#else
 	int ax = fake_on ? fake_x : (pad ? SDL_JoystickGetAxis(pad, 0) : 0);
 	int ay = fake_on ? fake_y : (pad ? SDL_JoystickGetAxis(pad, 1) : 0);
+	const int speed = 100;
+#endif
+	if (!stick_is_mouse) ax = ay = 0;
 	const int dead = 6000;
 	ax = abs(ax) < dead ? 0 : (ax > 0 ? ax - dead : ax + dead);
 	ay = abs(ay) < dead ? 0 : (ay > 0 ? ay - dead : ay + dead);
 	if (ax || ay) {
-		// quadratic response: fine control near the centre, fast across the screen
-		const int dx = static_cast<int>(static_cast<long long>(ax) * abs(ax) / (26768LL * 26768LL / 14));
-		const int dy = static_cast<int>(static_cast<long long>(ay) * abs(ay) / (26768LL * 26768LL / 14));
+		// quadratic response: fine control near the centre, fast across the screen. Kept in
+		// 1/256 pixel with the remainder carried over, so slow speeds do not round to nothing.
+		static int rem_x, rem_y;
+		rem_x += static_cast<int>(static_cast<long long>(ax) * abs(ax) * speed * 256 / 100 / (26768LL * 26768LL / 14));
+		rem_y += static_cast<int>(static_cast<long long>(ay) * abs(ay) * speed * 256 / 100 / (26768LL * 26768LL / 14));
+		const int dx = rem_x / 256, dy = rem_y / 256;
+		rem_x -= dx * 256; rem_y -= dy * 256;
 		if (dx || dy)
 			mouse_move(dx, dy, in_gui != 0);
 	}
-	if (!sel && !(r36s_vkbd_shown() && !in_gui)) {
+	if (!sel && stick_is_mouse && !(r36s_vkbd_shown() && !in_gui)) {
+#ifdef TURBO_LIBRETRO
+		// a button that presses an Amiga key is not a mouse button
+		const int bl = !lr_key_map[PAD_A] && pad_button(PAD_A), br = !lr_key_map[PAD_B] && pad_button(PAD_B);
+		const int bx = !lr_key_map[PAD_X] && pad_button(PAD_X);
+#else
 		const int bl = pad_button(PAD_A), br = pad_button(PAD_B);
+		const int bx = pad_button(PAD_X);
+#endif
 		// in the GUI, A stays the GUI's own "activate" button; only B clicks there
 		if (!in_gui && bl != prev[PAD_A]) mouse_button(0, bl != 0, false);
 		// X = double click (opening icons with A alone needs two quick presses)
-		const int bx = pad_button(PAD_X);
 		if (!in_gui && bx && !prev[PAD_X])
 			q_push_front("click"), q_push_front("wait 6"), q_push_front("click");
 		prev[PAD_X] = bx;

@@ -1,0 +1,36 @@
+# Software Information
+display_name = "Commodore - Amiga (TurboUAE)"
+categories = "Emulator"
+authors = "Grzegorz Korycki|Dimitris Panokostas|TomB|Toni Wilen|UAE Team"
+corename = "TurboUAE"
+supported_extensions = "uae|adf|adz|dms|fdi|hdf|hdz|lha|cue|iso|ccd|mds|nrg|chd|m3u|zip"
+license = "GPLv3"
+permissions = ""
+display_version = "0.2.0"
+
+# Hardware Information
+manufacturer = "Commodore"
+systemname = "Amiga"
+systemid = "commodore_amiga"
+
+# Libretro Features
+database = "Commodore - Amiga|Commodore - CD32"
+supports_no_game = "true"
+savestate = "false"
+cheats = "false"
+input_descriptors = "true"
+memory_descriptors = "false"
+libretro_saves = "false"
+core_options = "true"
+core_options_version = "2.0"
+load_subsystem = "false"
+hw_render = "false"
+needs_fullpath = "true"
+disk_control = "true"
+is_experimental = "false"
+
+# Firmware
+firmware_count = 0
+notes = "Kickstart ROMs are found by their contents, under any file name, in system/turbouae/kickstarts and in the system directory itself. Without one the built-in AROS ROM is used.|Data files (settings screen, on-screen keyboard, WHDLoad booter) belong in system/turbouae.|Default buttons: L2 = TurboUAE settings, R2 = on-screen keyboard (core options, Input)."
+
+description = "Amiga emulator with a working 68k JIT compiler for 64-bit ARM, made for the R36S and other RK3326 handhelds: Amiberry v3.3 with the TurboUAE fixes (JIT fault handling, protected memory holes), as a libretro core. About 14x the speed of the interpreter on a Cortex-A35 - enough for a 68060-class Workbench with RTG. Core options cover model, CPU/JIT, memory, chipset, video, audio, media and input; the complete Amiberry settings screen and an on-screen Amiga keyboard are built in."

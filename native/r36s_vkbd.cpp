@@ -9,10 +9,12 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <cstring>
+#include <string>
 
 #include "sysdeps.h"
 #include "options.h"
 
+std::string prefix_with_application_directory_path(std::string currentpath);
 extern SDL_Renderer* renderer;
 extern SDL_Window* sdl_window;
 
@@ -103,7 +105,7 @@ void load_font(int px)
 	font_tried = true;
 	if (!TTF_WasInit() && TTF_Init() != 0)
 		return;
-	font = TTF_OpenFont("data/AmigaTopaz.ttf", px);
+	font = TTF_OpenFont(prefix_with_application_directory_path("data/AmigaTopaz.ttf").c_str(), px);
 	if (!font)
 		write_log("r36s vkbd: no font (%s)\n", TTF_GetError());
 }
@@ -150,7 +152,20 @@ void draw()
 			SDL_RenderFillRect(renderer, &k);
 			SDL_SetRenderDrawColor(renderer, 200, 200, 210, 255);
 			SDL_RenderDrawRect(renderer, &k);
-			if (SDL_Texture* t = label(r, i)) {
+			const SDL_Scancode sc = rows[r][i].sc;
+			if (sc == SDL_SCANCODE_UP || sc == SDL_SCANCODE_DOWN || sc == SDL_SCANCODE_LEFT || sc == SDL_SCANCODE_RIGHT) {
+				// cursor keys: a solid arrow head instead of a text label
+				SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+				const int cx = k.x + k.w / 2, cy = k.y + k.h / 2, h = k.h * 2 / 5;
+				for (int s = 0; s < h; s++) {
+					const int a = s - h / 2, half = s * 3 / 4;
+					if (sc == SDL_SCANCODE_UP) SDL_RenderDrawLine(renderer, cx - half, cy + a, cx + half, cy + a);
+					else if (sc == SDL_SCANCODE_DOWN) SDL_RenderDrawLine(renderer, cx - half, cy - a, cx + half, cy - a);
+					else if (sc == SDL_SCANCODE_LEFT) SDL_RenderDrawLine(renderer, cx + a, cy - half, cx + a, cy + half);
+					else SDL_RenderDrawLine(renderer, cx - a, cy - half, cx - a, cy + half);
+				}
+			}
+			else if (SDL_Texture* t = label(r, i)) {
 				int tw, th;
 				SDL_QueryTexture(t, nullptr, nullptr, &tw, &th);
 				if (tw > k.w - 2) { th = th * (k.w - 2) / tw; tw = k.w - 2; }

@@ -1,6 +1,8 @@
 #!/bin/sh
 # Cross-builds Amiberry v3.3 for the R36S (ArkOS, Ubuntu 19.10 userland, glibc 2.30) in WSL.
-#   wsl sh /mnt/i/GITHUB/R36S_Amiberry/build/build_v33.sh [clean]
+#   sh build/build_ports.sh [clean]      (in WSL or Linux; the libretro core: build_lr.sh)
+# The unmodified Amiberry v3.3 source: UPSTREAM_TGZ (default: amiberry-v3.3-upstream.tar.gz
+# next to the repository / in the release archive's source/ folder).
 # Compiler: Ubuntu's gcc-9 AArch64 cross (g++-9-aarch64-linux-gnu). Headers and libraries:
 # /opt/r36s-sysroot, unpacked from the same Ubuntu 19.10 arm64 -dev packages the console's
 # libraries come from, so nothing newer than the console has can be linked in. The C++
@@ -10,10 +12,11 @@
 set -e
 SR=/opt/r36s-sysroot; G=$SR/usr/lib/gcc/aarch64-linux-gnu/9
 B=/opt/r36s-build; SRC=$B/amiberry-3.3
-TGZ=/mnt/i/GITHUB/R36S_Amiberry/baseline/agent/jobs/done
-ls /mnt/i/GITHUB >/dev/null 2>&1 || sudo -n mount -t drvfs I: /mnt/i
+HERE=$(cd "$(dirname "$0")" && pwd)
+UP=${UPSTREAM_TGZ:-$HERE/../amiberry-v3.3-upstream.tar.gz}
 sudo mkdir -p $B && sudo chown $(id -u) $B && mkdir -p $B/bin
-[ -f $SR/usr/include/unicode/ucnv.h ] || tar -xzf /mnt/c/temp/r36s_amiberry/sysroot/icu-headers.tgz -C $SR
+# the sysroot needs the ICU headers of the same Ubuntu release (libicu-dev) for libxml2's headers
+[ -f $SR/usr/include/unicode/ucnv.h ] || { [ -f "$ICU_HEADERS_TGZ" ] && tar -xzf "$ICU_HEADERS_TGZ" -C $SR; }
 
 # The -dev packages link libm.so and friends to ABSOLUTE paths (/lib/aarch64-linux-gnu/...).
 # Inside a sysroot those dangle, the linker skips them and quietly takes the cross
@@ -46,15 +49,16 @@ export PATH=$B/bin:$PATH
 
 if [ "$1" = clean ] || [ ! -d $SRC ]; then
   rm -rf $SRC && mkdir -p $SRC
-  tar -xzf "$(ls $TGZ/04-build-v33_*/amiberry-v3.3.tar.gz | head -1)" -C $SRC --strip-components=1
-  python3 /mnt/i/GITHUB/R36S_Amiberry/build/patches/natmem.py $SRC/src/osdep/amiberry_mem.cpp
+  tar -xzf "$UP" -C $SRC --strip-components=1
+  python3 $HERE/patches/natmem.py $SRC/src/osdep/amiberry_mem.cpp
 fi
 # always refresh the hook (it is our own code and changes often)
 if true; then
-  python3 /mnt/i/GITHUB/R36S_Amiberry/build/patches/r36s_hook.py $SRC
-  python3 /mnt/i/GITHUB/R36S_Amiberry/build/patches/exception_log.py $SRC
-  python3 /mnt/i/GITHUB/R36S_Amiberry/build/patches/sigsegv_quiet.py $SRC
-  python3 /mnt/i/GITHUB/R36S_Amiberry/build/patches/cpu_idle_cfg.py $SRC
+  python3 $HERE/patches/r36s_hook.py $SRC
+  python3 $HERE/patches/exception_log.py $SRC
+  python3 $HERE/patches/sigsegv_quiet.py $SRC
+  python3 $HERE/patches/cpu_idle_cfg.py $SRC
+  python3 $HERE/patches/whd_jit.py $SRC
 fi
 cd $SRC
 t0=$(date +%s)

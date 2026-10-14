@@ -73,7 +73,10 @@ if 'r36s_gui_overlay' not in s:
 p = d + '/src/osdep/target.h'; s = open(p).read()
 old = '#define AMIBERRYVERSION _T("Amiberry v3.3 (2020-09-17)")'
 if old in s:
-    s = s.replace(old, '#define AMIBERRYVERSION _T("TurboUAE 0.1.0 - based on Amiberry v3.3 (2020-09-17)")', 1)
+    s = s.replace(old, '#define AMIBERRYVERSION _T("TurboUAE 0.2.0 - based on Amiberry v3.3 (2020-09-17)")', 1)
+    open(p, 'w').write(s)
+elif '"TurboUAE 0.1.0 - based on' in s:          # a tree patched by an older version
+    s = s.replace('"TurboUAE 0.1.0 - based on', '"TurboUAE 0.2.0 - based on', 1)
     open(p, 'w').write(s)
 p = d + '/src/osdep/amiberry_gfx.cpp'; s = open(p).read()
 s = s.replace('SDL_CreateWindow("Amiberry"', 'SDL_CreateWindow("TurboUAE"')
